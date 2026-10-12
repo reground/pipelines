@@ -856,19 +856,95 @@ func (s *Server) handleItemArchive(w http.ResponseWriter, r *http.Request) {
 
 // ---- contacts
 
+// contactEntry is one pipeline entry a contact is in, shown on the
+// contacts list so you can go straight from a person to where they are.
+type contactEntry struct {
+	Pipeline string
+	Stage    string
+	Path     string
+}
+
+type contactRow struct {
+	Contact dbstore.Contact
+	Entries []contactEntry
+}
+
 type contactsData struct {
-	Contacts []dbstore.Contact
-	Query    string
+	Rows    []contactRow
+	Query   string
+	Show    string
+	Choices []scopeOption
 }
 
 func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
+	show := r.URL.Query().Get("show") // "" all | any | none | <pipeline id>
 	cs, err := s.DB.ListContacts(q)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, "contacts", "Contacts", contactsData{Contacts: cs, Query: q},
+	pls, _ := s.loadPipelines()
+
+	// Which entries each contact has, across every pipeline: one query per
+	// pipeline, grouped here.
+	byContact := map[int64][]contactEntry{}
+	for _, p := range pls {
+		items, err := s.DB.ListItems(dbstore.Filter{Pipeline: p.ID, Sort: "created"})
+		if err != nil {
+			s.serverError(w, r, err)
+			return
+		}
+		for _, it := range items {
+			stage := it.Stage + " (no longer in the pipeline)"
+			if st, ok := p.Stage(it.Stage); ok {
+				stage = st.Label
+			}
+			byContact[it.ContactID] = append(byContact[it.ContactID], contactEntry{
+				Pipeline: p.Label, Stage: stage, Path: fmt.Sprintf("/p/%s/items/%d", p.ID, it.ID),
+			})
+		}
+	}
+
+	inPipeline := func(id int64, pipelineID string) bool {
+		for _, p := range pls {
+			if p.ID != pipelineID {
+				continue
+			}
+			for _, e := range byContact[id] {
+				if strings.HasPrefix(e.Path, "/p/"+p.ID+"/") {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	var rows []contactRow
+	for _, c := range cs {
+		es := byContact[c.ID]
+		switch show {
+		case "":
+		case "any":
+			if len(es) == 0 {
+				continue
+			}
+		case "none":
+			if len(es) > 0 {
+				continue
+			}
+		default:
+			if !inPipeline(c.ID, show) {
+				continue
+			}
+		}
+		rows = append(rows, contactRow{Contact: c, Entries: es})
+	}
+
+	choices := []scopeOption{{"", "Everyone"}, {"any", "In any pipeline"}, {"none", "Not in any pipeline"}}
+	for _, p := range pls {
+		choices = append(choices, scopeOption{p.ID, "In " + p.Label})
+	}
+	s.render(w, r, "contacts", "Contacts", contactsData{Rows: rows, Query: q, Show: show, Choices: choices},
 		crumb{"Home", "/"}, crumb{"Contacts", ""})
 }
 

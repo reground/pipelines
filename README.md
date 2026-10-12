@@ -38,7 +38,9 @@ refused.
 - **A pipeline's list**: sortable by column, filterable by name and stage.
 - **An entry**: what to do at this stage, any drafts filled in for this
   contact, buttons to move it forward, its details, and its history.
-- **Contacts**: people, with only a name required.
+- **Contacts**: people, with only a name required. The list shows which
+  pipelines each person is in (each entry links straight to it) and can be
+  filtered to people in a given pipeline, in any, or in none.
 - **How this pipeline works**: the pipeline file, read back in plain text.
 - CSV exports of items, contacts and the event log.
 

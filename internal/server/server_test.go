@@ -438,3 +438,51 @@ func TestOneContactCanBeInSeveralPipelinesAndTwiceInOne(t *testing.T) {
 		t.Errorf("Other Process list should show Bob once")
 	}
 }
+
+func TestContactsListLeadsToPipelines(t *testing.T) {
+	ts, s := newTestServer(t)
+	c := client()
+	if err := os.MkdirAll(s.Dir+"/other", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Dir+"/other/pipeline.yml", []byte(secondPipeline), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	post(t, c, ts.URL+"/p/basic/items", url.Values{"name": {"Bob Example"}}, nil) // contact 1
+	post(t, c, ts.URL+"/p/other/items", url.Values{"contact_id": {"1"}}, nil)     // Bob in both
+	post(t, c, ts.URL+"/contacts", url.Values{"name": {"Loose Contact"}}, nil)    // contact 2, nowhere
+	post(t, c, ts.URL+"/p/other/items", url.Values{"name": {"Other Only"}}, nil)  // contact 3
+
+	_, body := get(t, c, ts.URL+"/contacts")
+	for _, want := range []string{
+		`>Basic: Start</a>`, `>Other Process: First</a>`, // Bob's two entries, linked
+		`href="/p/basic/items/1"`, `href="/p/other/items/2"`, // item ids are global across pipelines
+		"None yet", // the loose contact
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("contacts list missing %q", want)
+		}
+	}
+
+	names := func(show string) string {
+		_, b := get(t, c, ts.URL+"/contacts?show="+show)
+		var out []string
+		for _, n := range []string{"Bob Example", "Loose Contact", "Other Only"} {
+			if strings.Contains(b, ">"+n+"</a>") {
+				out = append(out, n)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	for show, want := range map[string]string{
+		"":      "Bob Example,Loose Contact,Other Only",
+		"any":   "Bob Example,Other Only",
+		"none":  "Loose Contact",
+		"basic": "Bob Example",
+		"other": "Bob Example,Other Only",
+	} {
+		if got := names(show); got != want {
+			t.Errorf("show=%q: got %q, want %q", show, got, want)
+		}
+	}
+}

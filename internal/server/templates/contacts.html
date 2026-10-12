@@ -1,17 +1,29 @@
 {{define "content"}}
 <h1>Contacts</h1>
 <p><a href="/contacts/new">Add a contact</a> · <a href="/export/contacts.csv">Download as CSV</a></p>
-<form method="get" action="/contacts" aria-label="Search contacts">
+<form method="get" action="/contacts" aria-label="Search and filter contacts">
 <label for="q">Search by name or email</label>
 <input id="q" name="q" type="search" value="{{.Query}}">
-<p><button type="submit">Search</button></p>
+<label for="show">Show</label>
+<select id="show" name="show">
+{{$show := .Show}}
+{{range .Choices}}<option value="{{.Value}}"{{if eq .Value $show}} selected{{end}}>{{.Label}}</option>{{end}}
+</select>
+<p><button type="submit">Apply</button></p>
 </form>
-{{if not .Contacts}}<p>No contacts yet.</p>{{else}}
+{{if not .Rows}}<p>No contacts match.</p>{{else}}
 <table>
-<caption>{{len .Contacts}} {{if eq (len .Contacts) 1}}contact{{else}}contacts{{end}}</caption>
-<thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Website</th></tr></thead>
+<caption>{{len .Rows}} {{if eq (len .Rows) 1}}contact{{else}}contacts{{end}}</caption>
+<thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">In pipelines</th><th scope="col">Website</th></tr></thead>
 <tbody>
-{{range .Contacts}}<tr><th scope="row"><a href="/contacts/{{.ID}}">{{.Name}}</a></th><td>{{.Email}}</td><td>{{.Website}}</td></tr>{{end}}
+{{range .Rows}}
+<tr>
+<th scope="row"><a href="/contacts/{{.Contact.ID}}">{{.Contact.Name}}</a></th>
+<td>{{.Contact.Email}}</td>
+<td>{{if .Entries}}<ul class="plain">{{range .Entries}}<li><a href="{{.Path}}">{{.Pipeline}}: {{.Stage}}</a></li>{{end}}</ul>{{else}}<span class="hint">None yet</span>{{end}}</td>
+<td>{{.Contact.Website}}</td>
+</tr>
+{{end}}
 </tbody>
 </table>
 {{end}}
