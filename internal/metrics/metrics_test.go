@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"reground.org/pipelines/internal/dbstore"
-	"reground.org/pipelines/internal/pipeline"
-	"reground.org/pipelines/internal/testdb"
+	"gitea.reground.org/will/pipelines/internal/dbstore"
+	"gitea.reground.org/will/pipelines/internal/pipeline"
+	"gitea.reground.org/will/pipelines/internal/testdb"
 )
 
 type fixture struct {

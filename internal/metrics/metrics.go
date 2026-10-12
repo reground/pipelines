@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"reground.org/pipelines/internal/dbstore"
-	"reground.org/pipelines/internal/pipeline"
+	"gitea.reground.org/will/pipelines/internal/dbstore"
+	"gitea.reground.org/will/pipelines/internal/pipeline"
 )
 
 // Section is one number on a view.

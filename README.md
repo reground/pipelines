@@ -155,6 +155,12 @@ Edit the file, run `pipelines check`, push.
   exit or view that still points at the removed one.
 - Changing history is not possible; the log is append-only.
 
+The definitions repo runs `pipelines check` on every push (a Gitea
+Actions workflow that `go install`s a pinned tag of this repo, the same way
+the campaign repos install `eec-campaigns`). Bump the tag in that workflow
+when the engine gains a feature the definitions start to use. The check is
+feedback, not a gate: the hub pulls definitions on a timer regardless.
+
 If a file is broken while the server runs, the app keeps serving the last
 working version and shows the problems at the top of every page.
 

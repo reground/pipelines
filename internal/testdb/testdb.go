@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"reground.org/pipelines/internal/dbstore"
+	"gitea.reground.org/will/pipelines/internal/dbstore"
 )
 
 func New(t *testing.T) *dbstore.DB {

@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"os"
 
-	"reground.org/pipelines/internal/dbstore"
-	"reground.org/pipelines/internal/pipeline"
-	"reground.org/pipelines/internal/server"
+	"gitea.reground.org/will/pipelines/internal/dbstore"
+	"gitea.reground.org/will/pipelines/internal/pipeline"
+	"gitea.reground.org/will/pipelines/internal/server"
 )
 
 func main() {

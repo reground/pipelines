@@ -1,4 +1,4 @@
-module reground.org/pipelines
+module gitea.reground.org/will/pipelines
 
 go 1.23.1
 

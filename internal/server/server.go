@@ -22,9 +22,9 @@ import (
 	"sync"
 	"time"
 
-	"reground.org/pipelines/internal/dbstore"
-	"reground.org/pipelines/internal/metrics"
-	"reground.org/pipelines/internal/pipeline"
+	"gitea.reground.org/will/pipelines/internal/dbstore"
+	"gitea.reground.org/will/pipelines/internal/metrics"
+	"gitea.reground.org/will/pipelines/internal/pipeline"
 )
 
 //go:embed templates/*.html static/*

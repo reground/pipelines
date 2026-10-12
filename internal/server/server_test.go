@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"reground.org/pipelines/internal/testdb"
+	"gitea.reground.org/will/pipelines/internal/testdb"
 )
 
 func newTestServer(t *testing.T) (*httptest.Server, *Server) {
