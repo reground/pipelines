@@ -109,6 +109,36 @@ func TestWholeFlow(t *testing.T) {
 		t.Fatalf("pitch not counted on home:\n%s", home)
 	}
 
+	// A repeat action keeps the item here, is logged each time, and shows
+	// its draft and its count.
+	_, body = get(t, c, ts.URL+"/p/basic/items/1")
+	if !strings.Contains(body, "Not done yet at this stage") || !strings.Contains(body, "just checking you saw my note") {
+		t.Fatalf("repeat section missing:\n%s", body)
+	}
+	res = post(t, c, ts.URL+"/p/basic/items/1/repeat", url.Values{"note": {"second try"}}, nil)
+	if !strings.Contains(res.Header.Get("Location"), "notice=") {
+		t.Fatalf("repeat refused: %q", res.Header.Get("Location"))
+	}
+	post(t, c, ts.URL+"/p/basic/items/1/repeat", url.Values{}, nil)
+	_, body = get(t, c, ts.URL+"/p/basic/items/1")
+	if !strings.Contains(body, "Done 2 times so far") || !strings.Contains(body, "Sent a nudge at Waiting") {
+		t.Fatalf("repeat not counted or logged:\n%s", body)
+	}
+	if !strings.Contains(body, "Waiting</dd>") {
+		t.Fatalf("item should still be in Waiting:\n%s", body)
+	}
+	_, home = get(t, c, ts.URL+"/")
+	if !strings.Contains(home, "Last 7 days: 1") {
+		t.Fatalf("a repeat must not count as another pitch:\n%s", home)
+	}
+	// Nothing to repeat at a stage that does not offer it.
+	post(t, c, ts.URL+"/p/basic/items/1/move", url.Values{"to": {"finish"}}, nil)
+	res = post(t, c, ts.URL+"/p/basic/items/1/repeat", url.Values{}, nil)
+	if !strings.Contains(res.Header.Get("Location"), "error=") {
+		t.Fatal("repeat accepted at a stage without one")
+	}
+	post(t, c, ts.URL+"/p/basic/items/1/move", url.Values{"to": {"wait_a"}}, nil)
+
 	// Moving to the stage it is already in is refused.
 	res = post(t, c, ts.URL+"/p/basic/items/1/move", url.Values{"to": {"wait_a"}}, nil)
 	if !strings.Contains(res.Header.Get("Location"), "error=") {

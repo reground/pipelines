@@ -74,6 +74,7 @@ type Event struct {
 	FromStage string
 	ToStage   string
 	Note      string
+	RepeatID  string // for kind "repeated": which repeat action
 	At        time.Time
 }
 
@@ -254,6 +255,62 @@ func (db *DB) MoveItem(id int64, to, note string) error {
 	return tx.Commit()
 }
 
+// RepeatItem records that a repeat action was done again at the item's
+// current stage. The item stays where it is; the days-in-stage clock
+// restarts. stage is the stage the caller believes the item is in, so a
+// stale page cannot record a repeat against the wrong stage.
+func (db *DB) RepeatItem(id int64, stage, repeatID, note string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var pipeline, cur string
+	err = tx.QueryRow(`SELECT pipeline, stage FROM items WHERE id=$1 FOR UPDATE`, id).Scan(&pipeline, &cur)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if cur != stage {
+		return fmt.Errorf("the item has moved to %q since this page was loaded", cur)
+	}
+	if _, err := tx.Exec(
+		`UPDATE items SET stage_entered_at=now(), updated_at=now() WHERE id=$1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO events (item_id, pipeline, kind, from_stage, to_stage, note, repeat_id)
+		 VALUES ($1,$2,'repeated',$3,$3,$4,$5)`,
+		id, pipeline, cur, note, repeatID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RepeatTimes returns, for each non-archived item, every time the repeat
+// action was done, oldest first.
+func (db *DB) RepeatTimes(pipelineID, repeatID string) (map[int64][]time.Time, error) {
+	rows, err := db.Query(`SELECT e.item_id, e.at FROM events e JOIN items i ON i.id = e.item_id
+		WHERE e.pipeline=$1 AND e.kind='repeated' AND e.repeat_id=$2 AND i.archived_at IS NULL
+		ORDER BY e.at, e.id`, pipelineID, repeatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]time.Time{}
+	for rows.Next() {
+		var id int64
+		var at time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], at)
+	}
+	return out, rows.Err()
+}
+
 // SetArchived hides an item from lists without touching its history.
 func (db *DB) SetArchived(id int64, archived bool) error {
 	q := `UPDATE items SET archived_at = NULL, updated_at = now() WHERE id=$1`
@@ -397,7 +454,8 @@ func (db *DB) CountsByStage(pipelineID string) (map[string]int, error) {
 // means an item that bounces back and forth is one pitch, not several.
 func (db *DB) FirstEntries(pipelineID string, stages []string) (map[int64]time.Time, error) {
 	rows, err := db.Query(`SELECT e.item_id, min(e.at) FROM events e JOIN items i ON i.id = e.item_id
-		WHERE e.pipeline=$1 AND e.to_stage = ANY($2) AND i.archived_at IS NULL
+		WHERE e.pipeline=$1 AND e.kind IN ('created','moved') AND e.to_stage = ANY($2)
+		AND i.archived_at IS NULL
 		GROUP BY e.item_id`, pipelineID, pq.Array(stages))
 	if err != nil {
 		return nil, err
@@ -427,7 +485,7 @@ func (db *DB) AllEvents(pipelineID string) ([]Event, error) {
 
 func (db *DB) events(tail string, arg any) ([]Event, error) {
 	rows, err := db.Query(
-		`SELECT id, item_id, pipeline, kind, from_stage, to_stage, note, at FROM events `+tail, arg)
+		`SELECT id, item_id, pipeline, kind, from_stage, to_stage, note, repeat_id, at FROM events `+tail, arg)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +493,7 @@ func (db *DB) events(tail string, arg any) ([]Event, error) {
 	var out []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.ItemID, &e.Pipeline, &e.Kind, &e.FromStage, &e.ToStage, &e.Note, &e.At); err != nil {
+		if err := rows.Scan(&e.ID, &e.ItemID, &e.Pipeline, &e.Kind, &e.FromStage, &e.ToStage, &e.Note, &e.RepeatID, &e.At); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

@@ -102,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /p/{pid}/items/{id}", s.handleItem)
 	mux.HandleFunc("POST /p/{pid}/items/{id}/fields", s.handleItemFields)
 	mux.HandleFunc("POST /p/{pid}/items/{id}/move", s.handleItemMove)
+	mux.HandleFunc("POST /p/{pid}/items/{id}/repeat", s.handleItemRepeat)
 	mux.HandleFunc("POST /p/{pid}/items/{id}/archive", s.handleItemArchive)
 	mux.HandleFunc("GET /p/{pid}/views/{vid}", s.handleView)
 
@@ -312,6 +313,12 @@ func (s *Server) funcs() template.FuncMap {
 			}
 			return id + " (no longer in the pipeline)"
 		},
+		"repeatLabel": func(p *pipeline.Pipeline, id string) string {
+			if r, _, ok := p.FindRepeat(id); ok {
+				return r.Label
+			}
+			return id
+		},
 		"itemPath": func(p *pipeline.Pipeline, it dbstore.Item) string {
 			return fmt.Sprintf("/p/%s/items/%d", p.ID, it.ID)
 		},
@@ -390,9 +397,9 @@ func (s *Server) handleExportEvents(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	rows := [][]string{{"at", "item_id", "kind", "from_stage", "to_stage", "note"}}
+	rows := [][]string{{"at", "item_id", "kind", "from_stage", "to_stage", "note", "repeat_id"}}
 	for _, e := range evs {
-		rows = append(rows, []string{e.At.Format(time.RFC3339), strconv.FormatInt(e.ItemID, 10), e.Kind, e.FromStage, e.ToStage, e.Note})
+		rows = append(rows, []string{e.At.Format(time.RFC3339), strconv.FormatInt(e.ItemID, 10), e.Kind, e.FromStage, e.ToStage, e.Note, e.RepeatID})
 	}
 	writeCSV(w, p.ID+"-events.csv", rows)
 }
@@ -715,6 +722,12 @@ type itemData struct {
 	Contact   dbstore.Contact
 	Waiting   string
 	FieldList []pipeline.Field
+
+	// The stage's repeat action, if it has one, and how often it has been done.
+	Repeat       *pipeline.Repeat
+	RepeatDrafts []renderedTemplate
+	RepeatCount  int
+	RepeatLast   time.Time
 }
 
 func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
@@ -770,6 +783,22 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 			text = "This template could not be filled in: " + err.Error()
 		}
 		d.Drafts = append(d.Drafts, renderedTemplate{Name: name, Text: text, Missing: missing})
+	}
+	if r := st.Repeat; r != nil && !d.Retired {
+		d.Repeat = r
+		for _, e := range hist {
+			if e.Kind == "repeated" && e.RepeatID == r.ID {
+				d.RepeatCount++
+				d.RepeatLast = e.At
+			}
+		}
+		for _, name := range r.Templates {
+			text, missing, err := p.Render(name, c.Map(), it.Fields, st.ID, s.now())
+			if err != nil {
+				text = "This template could not be filled in: " + err.Error()
+			}
+			d.RepeatDrafts = append(d.RepeatDrafts, renderedTemplate{Name: name, Text: text, Missing: missing})
+		}
 	}
 	s.render(w, r, "item", p.Label+": "+c.Name, d,
 		crumb{"Home", "/"}, crumb{p.Label, "/p/" + p.ID + "/"}, crumb{c.Name, ""})
@@ -835,6 +864,48 @@ func (s *Server) handleItemMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redirectNotice(w, r, back, "Moved to "+st.Label+".")
+}
+
+func (s *Server) handleItemRepeat(w http.ResponseWriter, r *http.Request) {
+	p, it, ok := s.itemFor(w, r)
+	if !ok {
+		return
+	}
+	back := fmt.Sprintf("/p/%s/items/%d", p.ID, it.ID)
+	st, known := p.Stage(it.Stage)
+	if !known || st.Repeat == nil {
+		redirectError(w, r, back, "Nothing can be repeated at this stage.")
+		return
+	}
+	if err := s.DB.RepeatItem(it.ID, st.ID, st.Repeat.ID, strings.TrimSpace(r.PostFormValue("note"))); err != nil {
+		redirectError(w, r, back, err.Error())
+		return
+	}
+	n := 0
+	if hist, err := s.DB.ItemEvents(it.ID); err == nil {
+		for _, e := range hist {
+			if e.Kind == "repeated" && e.RepeatID == st.Repeat.ID {
+				n++
+			}
+		}
+	}
+	redirectNotice(w, r, back, fmt.Sprintf("Recorded: %s (%s time).", st.Repeat.Label, ordinal(n)))
+}
+
+// ordinal writes 1 as "1st", 2 as "2nd", 11 as "11th".
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
 }
 
 func (s *Server) handleItemArchive(w http.ResponseWriter, r *http.Request) {

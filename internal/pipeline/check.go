@@ -60,6 +60,7 @@ func (p *Pipeline) Check() (problems, warnings []string) {
 		stageIDs[s.ID] = s
 	}
 	hasTerminal := false
+	seenRepeat := map[string]bool{}
 	for _, s := range p.Stages {
 		name := fmt.Sprintf("stage %q", s.ID)
 		if strings.TrimSpace(s.Label) == "" {
@@ -107,6 +108,25 @@ func (p *Pipeline) Check() (problems, warnings []string) {
 				bad("%s uses the template %q, but there is no file templates/%s", name, t, t)
 			}
 		}
+		if r := s.Repeat; r != nil {
+			switch {
+			case s.Terminal:
+				bad("%s is marked terminal (finished), so it cannot have a repeat action", name)
+			case !idRe.MatchString(r.ID):
+				bad("%s: the repeat id %q must be lowercase letters, digits and underscores, starting with a letter", name, r.ID)
+			case seenRepeat[r.ID]:
+				bad("%s: the repeat id %q is used by another stage; repeat ids must be unique in a pipeline", name, r.ID)
+			}
+			seenRepeat[r.ID] = true
+			if strings.TrimSpace(r.Label) == "" {
+				bad("%s: the repeat action needs a label", name)
+			}
+			for _, t := range r.Templates {
+				if _, ok := p.Templates[t]; !ok {
+					bad("%s: the repeat action uses the template %q, but there is no file templates/%s", name, t, t)
+				}
+			}
+		}
 	}
 	if !hasTerminal {
 		bad("no stage is marked terminal: true, so no item can ever finish")
@@ -148,6 +168,11 @@ func (p *Pipeline) Check() (problems, warnings []string) {
 	for _, s := range p.Stages {
 		for _, t := range s.Templates {
 			used[t] = true
+		}
+		if s.Repeat != nil {
+			for _, t := range s.Repeat.Templates {
+				used[t] = true
+			}
 		}
 	}
 	names := make([]string, 0, len(p.Templates))
@@ -217,9 +242,16 @@ func (p *Pipeline) Check() (problems, warnings []string) {
 		case KindCounts:
 			// counts per stage; nothing further to configure
 		case KindEvents:
-			if v.Event == nil || len(v.Event.Entered) == 0 {
-				bad("%s needs event: {entered: <stage>}", name)
-			} else {
+			switch {
+			case v.Event == nil || (len(v.Event.Entered) == 0 && v.Event.Repeated == ""):
+				bad("%s needs event: {entered: <stage>} or event: {repeated: <repeat id>}", name)
+			case len(v.Event.Entered) > 0 && v.Event.Repeated != "":
+				bad("%s gives both entered and repeated; use one", name)
+			case v.Event.Repeated != "":
+				if !seenRepeat[v.Event.Repeated] {
+					bad("%s counts the repeat %q, which no stage offers", name, v.Event.Repeated)
+				}
+			default:
 				for _, id := range v.Event.Entered {
 					stageRef("event.entered", id)
 				}
@@ -233,12 +265,18 @@ func (p *Pipeline) Check() (problems, warnings []string) {
 				}
 			}
 		case KindCohort:
+			if v.Event != nil && v.Event.Repeated != "" {
+				bad("%s: a cohort cannot be built from a repeat; use event: {entered: <stage>}", name)
+			}
 			if v.Event == nil || len(v.Event.Entered) == 0 {
 				bad("%s needs event: {entered: <stage>} to say who is in the cohort", name)
 			} else {
 				for _, id := range v.Event.Entered {
 					stageRef("event.entered", id)
 				}
+			}
+			if v.Outcome != nil && v.Outcome.Repeated != "" {
+				bad("%s: an outcome cannot be a repeat; use outcome: {entered: [<stage>, ...]}", name)
 			}
 			if v.Outcome == nil || len(v.Outcome.Entered) == 0 {
 				bad("%s needs outcome: {entered: [<stage>, ...]} to say what counts as a result", name)

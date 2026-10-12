@@ -94,6 +94,16 @@ type Stage struct {
 	Waiting   string     `yaml:"waiting_on"` // me | them | none; overrides the type's default
 	Templates StringList `yaml:"templates"`  // template files shown at this stage
 	Checklist StringList `yaml:"checklist"`  // reminders shown at this stage
+	Repeat    *Repeat    `yaml:"repeat"`     // an action that can happen again without leaving the stage
+}
+
+// Repeat is something done again and again at one stage, like nudging a
+// partner who has not answered. Doing it records an event and restarts the
+// days-in-stage clock; the item stays where it is.
+type Repeat struct {
+	ID        string     `yaml:"id"`
+	Label     string     `yaml:"label"`
+	Templates StringList `yaml:"templates"` // drafts shown for this action
 }
 
 // WaitingOn derives who the ball is with from the stage, so nobody has to
@@ -137,8 +147,11 @@ type View struct {
 	EndingDaysAgo int          `yaml:"ending_days_ago"`
 }
 
+// EnteredSpec says which events a view counts: first entries into stages,
+// or every time a repeat action was done.
 type EnteredSpec struct {
-	Entered StringList `yaml:"entered"`
+	Entered  StringList `yaml:"entered"`
+	Repeated string     `yaml:"repeated"` // a repeat id; counts every occurrence
 }
 
 // Where selects items. All conditions given must hold.
@@ -186,6 +199,27 @@ func (p *Pipeline) View(id string) (View, bool) {
 		}
 	}
 	return View{}, false
+}
+
+// FindRepeat returns the repeat action with the given id, and the stage
+// that offers it.
+func (p *Pipeline) FindRepeat(id string) (Repeat, Stage, bool) {
+	for _, s := range p.Stages {
+		if s.Repeat != nil && s.Repeat.ID == id {
+			return *s.Repeat, s, true
+		}
+	}
+	return Repeat{}, Stage{}, false
+}
+
+// HasRepeats reports whether any stage offers a repeat action.
+func (p *Pipeline) HasRepeats() bool {
+	for _, s := range p.Stages {
+		if s.Repeat != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // FirstStage is where new items start.
@@ -276,6 +310,7 @@ var unknownKeyRe = regexp.MustCompile(`line (\d+): field (\S+) not found in type
 var yamlThings = map[string]string{
 	"Pipeline": "pipeline", "Field": "field", "Stage": "stage", "View": "view",
 	"Where": "where clause", "DueWithin": "due_within", "EnteredSpec": "event or outcome",
+	"Repeat": "repeat",
 }
 
 // friendlyYAML rewrites the parser's messages for people who do not know
@@ -342,6 +377,9 @@ func (p *Pipeline) Outline() string {
 			if n, ok := p.Stage(x); ok {
 				fmt.Fprintf(&b, "   or: %s\n", n.Label)
 			}
+		}
+		if s.Repeat != nil {
+			fmt.Fprintf(&b, "   can be repeated: %s\n", s.Repeat.Label)
 		}
 	}
 	return b.String()

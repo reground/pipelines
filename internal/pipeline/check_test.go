@@ -49,6 +49,13 @@ func TestProblemsArePlainEnglish(t *testing.T) {
 		{"view date type", func(p *Pipeline) { p.Views[0].Where.DueWithin = &DueWithin{Field: "notes", Days: 3} }, "needs a date field"},
 		{"view window", func(p *Pipeline) { p.Views[2].Windows = nil }, "needs windows"},
 		{"view kind", func(p *Pipeline) { p.Views[1].Kind = "pie" }, `kind "pie"`},
+		{"repeat on finished stage", func(p *Pipeline) { p.Stages[2].Repeat = &Repeat{ID: "again", Label: "Again"} }, "cannot have a repeat action"},
+		{"repeat bad id", func(p *Pipeline) { p.Stages[1].Repeat.ID = "Not Ok" }, "repeat id"},
+		{"repeat duplicate id", func(p *Pipeline) { p.Stages[0].Repeat = &Repeat{ID: "nudge", Label: "Again"} }, "used by another stage"},
+		{"repeat no label", func(p *Pipeline) { p.Stages[1].Repeat.Label = "" }, "needs a label"},
+		{"repeat missing template", func(p *Pipeline) { p.Stages[1].Repeat.Templates = []string{"absent.md"} }, "no file templates/absent.md"},
+		{"view unknown repeat", func(p *Pipeline) { p.Views[3].Event.Repeated = "zzz" }, `repeat "zzz", which no stage offers`},
+		{"view entered and repeated", func(p *Pipeline) { p.Views[3].Event.Entered = StringList{"wait_a"} }, "gives both entered and repeated"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

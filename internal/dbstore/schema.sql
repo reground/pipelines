@@ -29,12 +29,14 @@ CREATE TABLE IF NOT EXISTS events (
     id         BIGSERIAL PRIMARY KEY,
     item_id    BIGINT NOT NULL REFERENCES items(id),
     pipeline   TEXT NOT NULL,
-    kind       TEXT NOT NULL,         -- created | moved
+    kind       TEXT NOT NULL,         -- created | moved | repeated
     from_stage TEXT NOT NULL DEFAULT '',
     to_stage   TEXT NOT NULL,
     note       TEXT NOT NULL DEFAULT '',
     at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Which repeat action a "repeated" event was (empty for other kinds).
+ALTER TABLE events ADD COLUMN IF NOT EXISTS repeat_id TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS events_pipeline_stage_at ON events (pipeline, to_stage, at);
 CREATE INDEX IF NOT EXISTS events_item ON events (item_id, at);
 

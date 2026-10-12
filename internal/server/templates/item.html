@@ -27,6 +27,23 @@
 </section>
 {{end}}
 
+{{if .Repeat}}
+<h2>{{.Repeat.Label}}</h2>
+<p>{{if .RepeatCount}}Done {{.RepeatCount}} {{if eq .RepeatCount 1}}time{{else}}times{{end}} so far; last on {{niceTime .RepeatLast}}.{{else}}Not done yet at this stage.{{end}} Recording it keeps the entry here and restarts the time in this stage.</p>
+{{range .RepeatDrafts}}
+<section aria-labelledby="rdraft-{{.Name}}">
+<h3 id="rdraft-{{.Name}}">Draft: {{.Name}}</h3>
+{{if .Missing}}<p class="warn">Still missing: {{range $i, $m := .Missing}}{{if $i}}, {{end}}{{$m}}{{end}}. Add these below and the draft fills itself in.</p>{{end}}
+<pre class="draft">{{.Text}}</pre>
+</section>
+{{end}}
+<form method="post" action="/p/{{$.Pipeline.ID}}/items/{{$.Item.ID}}/repeat">
+<label for="repeat_note">Note (optional)</label>
+<input id="repeat_note" name="note">
+<p><button type="submit">{{.Repeat.Label}}</button></p>
+</form>
+{{end}}
+
 <h2>Move forward</h2>
 <form method="post" action="/p/{{.Pipeline.ID}}/items/{{.Item.ID}}/move">
 {{if .Next}}<button type="submit" name="to" value="{{.Next.ID}}">Done: move to {{.Next.Label}}</button>{{end}}
@@ -57,7 +74,7 @@
 <ol>
 {{$p := .Pipeline}}
 {{range .History}}
-<li>{{niceTime .At}}: {{if eq .Kind "created"}}added at {{stageLabel $p .ToStage}}{{else}}moved from {{stageLabel $p .FromStage}} to {{stageLabel $p .ToStage}}{{end}}{{if .Note}}. {{.Note}}{{end}}</li>
+<li>{{niceTime .At}}: {{if eq .Kind "created"}}added at {{stageLabel $p .ToStage}}{{else if eq .Kind "repeated"}}{{repeatLabel $p .RepeatID}} at {{stageLabel $p .ToStage}}{{else}}moved from {{stageLabel $p .FromStage}} to {{stageLabel $p .ToStage}}{{end}}{{if .Note}}. {{.Note}}{{end}}</li>
 {{end}}
 </ol>
 

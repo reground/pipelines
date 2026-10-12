@@ -77,6 +77,10 @@ stages:                      # in order; the first is where new items start
     checklist: [Something to remember]
     next: pitched            # the default step forward
     exits: [declined]        # other places it can go
+    repeat:                  # optional: something you can do again here
+      id: reminder           # unique in the pipeline; views refer to it
+      label: Sent a reminder
+      templates: [pitch-reminder.md]   # optional drafts for this action
   - id: pitched
     label: Pitched
     type: wait               # wait means the ball is with them
@@ -99,6 +103,23 @@ stages:                      # in order; the first is where new items start
 "Waiting on" is not a field anyone maintains. It follows from the stage:
 `wait` stages are waiting on them, terminal stages on nobody, the rest on
 you, unless a stage says `waiting_on:`.
+
+### Repeating a step
+
+Some things happen more than once at the same stage: a reminder to a
+partner who has not answered. A stage can offer one `repeat:` action. On
+the entry page it appears as a button (with its drafts). Pressing it:
+
+- writes a `repeated` event to the log, with the date and an optional note;
+- keeps the item where it is, and restarts "in this stage for", so
+  `days_in_stage_over` measures time since the last nudge;
+- shows "Done N times so far" on the entry, with each occurrence in its
+  history.
+
+A repeat is not an entry into the stage, so Pitches sent does not move.
+To count repeats, use `event: {repeated: <repeat id>}` in an `events` view
+(below). Terminal stages cannot have one, and a cohort cannot be built
+from one.
 
 ### Templates
 
@@ -141,8 +162,18 @@ views:
     ending_days_ago: 14                # gives recent pitches time to answer
 ```
 
-Events count each item's *first* entry into the stage, so an item that
-bounces back counts once. They measure what happened, not where things
+```yaml
+  - id: reminders
+    label: Reminders sent
+    kind: events
+    event: {repeated: reminder}        # every time, not first time
+    windows: [7, 30, 90]
+```
+
+Events with `entered:` count each item's *first* entry into the stage, so
+an item that bounces back counts once. With `repeated:` every occurrence
+counts, and the note under each number says how many entries they were
+spread across. They measure what happened, not where things
 sit now: an item that was pitched last week and has since moved on is
 still a pitch.
 

@@ -118,6 +118,24 @@ func Evaluate(p *pipeline.Pipeline, db *dbstore.DB, v pipeline.View, now time.Ti
 		}
 
 	case pipeline.KindEvents:
+		if v.Event.Repeated != "" {
+			times, err := db.RepeatTimes(p.ID, v.Event.Repeated)
+			if err != nil {
+				return res, err
+			}
+			for _, w := range v.Windows {
+				n, ids := repeatsBetween(times, now.AddDate(0, 0, -w), now.Add(time.Second))
+				nPrev, _ := repeatsBetween(times, now.AddDate(0, 0, -2*w), now.AddDate(0, 0, -w))
+				res.Sections = append(res.Sections, Section{
+					Label: fmt.Sprintf("Last %d days", w),
+					Count: n,
+					Note: fmt.Sprintf("Across %s. %.2f per day. The %d days before that: %d.",
+						plural(len(ids), "entry"), float64(n)/float64(w), w, nPrev),
+					Part: "w" + strconv.Itoa(w),
+				})
+			}
+			break
+		}
 		first, err := db.FirstEntries(p.ID, v.Event.Entered)
 		if err != nil {
 			return res, err
@@ -194,6 +212,15 @@ func Items(p *pipeline.Pipeline, db *dbstore.DB, v pipeline.View, part string, n
 		if err != nil || !strings.HasPrefix(part, "w") {
 			return nil, "", fmt.Errorf("unknown part %q", part)
 		}
+		if v.Event.Repeated != "" {
+			times, err := db.RepeatTimes(p.ID, v.Event.Repeated)
+			if err != nil {
+				return nil, "", err
+			}
+			_, ids := repeatsBetween(times, now.AddDate(0, 0, -w), now.Add(time.Second))
+			items, err := byIDs(ids)
+			return items, fmt.Sprintf("%s: last %d days", v.Label, w), err
+		}
 		first, err := db.FirstEntries(p.ID, v.Event.Entered)
 		if err != nil {
 			return nil, "", err
@@ -233,6 +260,28 @@ func countBetween(m map[int64]time.Time, from, to time.Time) []int64 {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
+}
+
+// repeatsBetween counts every occurrence in [from, to) and returns the
+// distinct items they belong to. Unlike countBetween, an item that did the
+// action three times in the window counts three times.
+func repeatsBetween(m map[int64][]time.Time, from, to time.Time) (int, []int64) {
+	n := 0
+	var ids []int64
+	for id, ts := range m {
+		hit := false
+		for _, at := range ts {
+			if !at.Before(from) && at.Before(to) {
+				n++
+				hit = true
+			}
+		}
+		if hit {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return n, ids
 }
 
 // cohortSets splits the cohort into those that reached the outcome after

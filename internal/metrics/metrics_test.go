@@ -202,3 +202,42 @@ func TestEventLogIsAppendOnly(t *testing.T) {
 	}
 	_ = fmt.Sprint
 }
+
+// repeat records a repeat action at the item's current stage, daysAgo days ago.
+func (f *fixture) repeat(id int64, stage string, daysAgo int) {
+	f.t.Helper()
+	_, err := f.db.Exec(`INSERT INTO events (item_id, pipeline, kind, from_stage, to_stage, repeat_id, at)
+		VALUES ($1,$2,'repeated',$3,$3,'nudge', now() - ($4 * interval '1 day'))`, id, f.p.ID, stage, daysAgo)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func TestRepeatedEventsCountEveryOccurrence(t *testing.T) {
+	f := setup(t)
+	a := f.item("wait_a", 20, nil)
+	f.repeat(a, "wait_a", 12)
+	f.repeat(a, "wait_a", 5)
+	f.repeat(a, "wait_a", 2)
+	b := f.item("wait_a", 10, nil)
+	f.repeat(b, "wait_a", 1)
+	f.item("wait_a", 10, nil) // never nudged
+
+	v := pipeline.View{ID: "n", Kind: pipeline.KindEvents,
+		Event: &pipeline.EnteredSpec{Repeated: "nudge"}, Windows: []int{7, 30}}
+	got := counts(f.view(v))
+	if got["w7"] != 3 || got["w30"] != 4 {
+		t.Fatalf("got %v, want w7=3 (two by a, one by b) and w30=4", got)
+	}
+	items, _, err := Items(f.p, f.db, v, "w7", time.Now())
+	if err != nil || len(items) != 2 {
+		t.Fatalf("drill-down should list the 2 items nudged this week: %v %d", err, len(items))
+	}
+
+	// Repeating does not make an item enter its stage again.
+	first := f.view(pipeline.View{ID: "e", Kind: pipeline.KindEvents,
+		Event: &pipeline.EnteredSpec{Entered: pipeline.StringList{"wait_a"}}, Windows: []int{30}})
+	if got := counts(first)["w30"]; got != 3 {
+		t.Fatalf("pitches should still count 3 items once each, got %d", got)
+	}
+}
