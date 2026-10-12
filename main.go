@@ -2,7 +2,8 @@
 // things through stages that are defined in text files, and a checker for
 // those files.
 //
-//	pipelines serve            run the web server (DATABASE_URL, PIPELINES_DIR, LISTEN)
+//	pipelines serve            run the web server (DATABASE_URL, PIPELINES_DIR or
+//	                           PIPELINES_DATA + SYNC_TOKEN for CI sync, LISTEN)
 //	pipelines check [DIR]      check pipeline files; exits 1 if there are problems
 package main
 
@@ -11,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"gitea.reground.org/will/pipelines/internal/dbstore"
 	"gitea.reground.org/will/pipelines/internal/pipeline"
@@ -38,7 +40,17 @@ func main() {
 }
 
 func serve() {
-	dir := mustEnv("PIPELINES_DIR")
+	// PIPELINES_DATA turns on definition sync: releases are installed under
+	// it and the app reads PIPELINES_DATA/current. PIPELINES_DIR may still
+	// be set to read a fixed directory instead (no sync).
+	dataDir := os.Getenv("PIPELINES_DATA")
+	dir := os.Getenv("PIPELINES_DIR")
+	if dir == "" && dataDir != "" {
+		dir = filepath.Join(dataDir, "current")
+	}
+	if dir == "" {
+		log.Fatal("PIPELINES_DIR (or PIPELINES_DATA) is required")
+	}
 	if code := check(dir); code != 0 {
 		log.Printf("starting anyway; broken pipelines are hidden until fixed")
 	}
@@ -50,6 +62,11 @@ func serve() {
 	srv, err := server.New(db, dir)
 	if err != nil {
 		log.Fatalf("server: %v", err)
+	}
+	srv.DataDir, srv.SyncToken = dataDir, os.Getenv("SYNC_TOKEN")
+	if srv.SyncToken != "" && dataDir == "" {
+		log.Printf("SYNC_TOKEN is set but PIPELINES_DATA is not; sync is disabled")
+		srv.SyncToken = ""
 	}
 	addr := envOrDefault("LISTEN", "127.0.0.1:8080")
 	log.Printf("listening on %s, pipelines in %s", addr, dir)

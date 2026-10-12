@@ -7,8 +7,10 @@
 package server
 
 import (
+	"crypto/subtle"
 	"embed"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -23,6 +25,7 @@ import (
 	"time"
 
 	"gitea.reground.org/will/pipelines/internal/dbstore"
+	"gitea.reground.org/will/pipelines/internal/defs"
 	"gitea.reground.org/will/pipelines/internal/metrics"
 	"gitea.reground.org/will/pipelines/internal/pipeline"
 )
@@ -37,6 +40,13 @@ type Server struct {
 	// broken file shows its problems on the page instead of a blank error.
 	Dir string
 	Now func() time.Time
+
+	// SyncToken and DataDir enable POST /admin/sync, which installs a new
+	// set of definitions into DataDir (see package defs). Dir is normally
+	// DataDir/current. With either unset the endpoint answers 503 and the
+	// definitions are whatever is already in Dir.
+	SyncToken string
+	DataDir   string
 
 	pages map[string]*template.Template
 
@@ -95,6 +105,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /p/{pid}/items/{id}/archive", s.handleItemArchive)
 	mux.HandleFunc("GET /p/{pid}/views/{vid}", s.handleView)
 
+	mux.HandleFunc("POST /admin/sync", s.handleAdminSync)
+
 	mux.HandleFunc("GET /contacts", s.handleContacts)
 	mux.HandleFunc("GET /contacts/new", s.handleNewContact)
 	mux.HandleFunc("POST /contacts", s.handleCreateContact)
@@ -147,6 +159,9 @@ type pageData struct {
 // problems reported alongside, so a typo never takes the app away.
 func (s *Server) loadPipelines() (ok []*pipeline.Pipeline, problems []string) {
 	loaded, errs, err := pipeline.LoadDirs(s.Dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, []string{"No pipeline definitions are installed yet. They arrive when the definitions repo is pushed."}
+	}
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
@@ -906,4 +921,90 @@ func (s *Server) handleUpdateContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redirectNotice(w, r, back, "Saved.")
+}
+
+// ---- definitions sync
+
+type syncPipeline struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Stages int    `json:"stages"`
+	Fields int    `json:"fields"`
+	Views  int    `json:"views"`
+}
+
+// handleAdminSync installs a new set of definitions from a gzipped tar
+// sent by CI. It is the only way definitions change on a running app, and
+// a set that does not pass the checker is refused before anything the app
+// is serving is touched.
+func (s *Server) handleAdminSync(w http.ResponseWriter, r *http.Request) {
+	reply := func(status int, v any) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(v)
+	}
+	if s.SyncToken == "" || s.DataDir == "" {
+		reply(http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "sync is not configured on this server"})
+		return
+	}
+	const prefix = "Bearer "
+	h := r.Header.Get("Authorization")
+	if len(h) <= len(prefix) || h[:len(prefix)] != prefix ||
+		subtle.ConstantTimeCompare([]byte(h[len(prefix):]), []byte(s.SyncToken)) != 1 {
+		reply(http.StatusUnauthorized, map[string]any{"ok": false, "error": "unauthorized"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
+	res, err := defs.Install(s.DataDir, r.Body)
+	var (
+		pe  *defs.ProblemsError
+		ae  *defs.ArchiveError
+		mbe *http.MaxBytesError
+	)
+	switch {
+	case errors.As(err, &mbe):
+		reply(http.StatusRequestEntityTooLarge, map[string]any{"ok": false, "error": "the upload is larger than 5 MiB"})
+		return
+	case errors.As(err, &pe):
+		log.Printf("sync refused: %d problem(s)", len(pe.Problems))
+		reply(http.StatusUnprocessableEntity, map[string]any{"ok": false, "problems": pe.Problems})
+		return
+	case errors.As(err, &ae):
+		reply(http.StatusBadRequest, map[string]any{"ok": false, "error": ae.Error()})
+		return
+	case err != nil:
+		log.Printf("sync error: %v", err)
+		reply(http.StatusInternalServerError, map[string]any{"ok": false, "error": "could not install the definitions; see the server log"})
+		return
+	}
+
+	out := map[string]any{"ok": true, "release": res.Release}
+	var pls []syncPipeline
+	var warnings []string
+	for _, p := range res.Pipelines {
+		pls = append(pls, syncPipeline{p.ID, p.Label, len(p.Stages), len(p.Fields), len(p.Views)})
+		// Items already sitting in a stage this version no longer has are
+		// not lost; say so, so it is not a surprise on the home page.
+		if counts, err := s.DB.CountsByStage(p.ID); err == nil {
+			var gone []string
+			for id := range counts {
+				if _, ok := p.Stage(id); !ok {
+					gone = append(gone, id)
+				}
+			}
+			sort.Strings(gone)
+			for _, id := range gone {
+				warnings = append(warnings, fmt.Sprintf(
+					"%s: %d item(s) are in the stage %q, which this version no longer has. They show on Home until moved to a current stage.",
+					p.ID, counts[id], id))
+			}
+		}
+	}
+	out["pipelines"] = pls
+	if len(warnings) > 0 {
+		out["warnings"] = warnings
+	}
+	log.Printf("sync installed release %s (%d pipeline(s))", res.Release, len(pls))
+	reply(http.StatusOK, out)
 }

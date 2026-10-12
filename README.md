@@ -19,6 +19,7 @@ docker run -d --name pipelines-dev-pg -e POSTGRES_PASSWORD=dev \
 
 export DATABASE_URL='postgres://postgres:dev@127.0.0.1:5433/pipelines?sslmode=disable'
 export PIPELINES_DIR=../reground-pipelines     # a folder of pipeline folders
+# or, to try CI sync locally: PIPELINES_DATA=/some/dir SYNC_TOKEN=secret
 export LISTEN=127.0.0.1:8080                   # the default
 
 go run . serve        # the web app (applies the schema on start)
@@ -155,20 +156,37 @@ Edit the file, run `pipelines check`, push.
   exit or view that still points at the removed one.
 - Changing history is not possible; the log is append-only.
 
-The definitions repo runs `pipelines check` on every push (a Gitea
-Actions workflow that `go install`s a pinned tag of this repo, the same way
-the campaign repos install `eec-campaigns`). Bump the tag in that workflow
-when the engine gains a feature the definitions start to use. The check is
-feedback, not a gate: the hub pulls definitions on a timer regardless.
+## How definitions reach a running app
 
-If a file is broken while the server runs, the app keeps serving the last
-working version and shows the problems at the top of every page.
+The definitions repo's CI does two things on every push to `master`: it
+runs `pipelines check .` (installing a pinned tag of this repo, the same
+way the campaign repos install `eec-campaigns`), and then sends the files
+to the app with `POST /admin/sync`, as `eec-courses` does for `eec`.
+
+The endpoint takes a gzipped tar with one folder per pipeline, checks it
+with the same checker, and only if it passes installs it as a new release
+(`<data>/releases/<time>/`) and switches `<data>/current` to it with one
+atomic rename. A set that fails the check is refused with the problems
+listed and nothing the app is serving changes, whoever sent it. Archives
+may contain only plain files and folders; links, hidden paths and
+oversized files are refused. The newest five releases are kept.
+
+Enable it by setting `PIPELINES_DATA` (a writable directory) and
+`SYNC_TOKEN`; the app then reads `PIPELINES_DATA/current`. Without them,
+`PIPELINES_DIR` is read as a fixed directory and `/admin/sync` answers
+503. Bump the pinned tag in the definitions workflow when the engine gains
+a feature the definitions start to use.
+
+If a file in the live directory is broken anyway (edited by hand, say),
+the app keeps serving the last working version and shows the problems at
+the top of every page.
 
 ## Layout
 
 ```
 main.go                       serve and check commands
 internal/pipeline/            file format, loading, the checker, templates
+internal/defs/                receiving, checking and installing synced definitions
 internal/dbstore/             Postgres schema and queries
 internal/metrics/             evaluating views and the entries behind them
 internal/server/              pages, templates, static CSS

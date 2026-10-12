@@ -1,6 +1,11 @@
 package server
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -193,5 +198,133 @@ func TestDatabaseOutageExplainsItself(t *testing.T) {
 	}
 	if code, _ := get(t, c, ts.URL+"/healthz"); code != 503 {
 		t.Fatalf("healthz should report the outage, got %d", code)
+	}
+}
+
+// ---- definitions sync
+
+func syncTgz(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for name, content := range files {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		tw.Write([]byte(content))
+	}
+	tw.Close()
+	gz.Close()
+	return buf.Bytes()
+}
+
+const syncGood = `id: basic
+label: Basic Synced
+fields: []
+stages:
+  - {id: start, label: Start, type: do, next: end}
+  - {id: end, label: End, type: do, terminal: true}
+`
+
+func newSyncServer(t *testing.T) (*httptest.Server, string) {
+	t.Helper()
+	db := testdb.New(t)
+	data := t.TempDir()
+	s, err := New(db, data+"/current")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.DataDir, s.SyncToken = data, "s3cret"
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	return ts, data
+}
+
+func doSync(t *testing.T, base, token string, body []byte) (int, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest("POST", base+"/admin/sync", bytes.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return res.StatusCode, out
+}
+
+func TestSyncRequiresTheToken(t *testing.T) {
+	ts, _ := newSyncServer(t)
+	body := syncTgz(t, map[string]string{"basic/pipeline.yml": syncGood})
+	if code, _ := doSync(t, ts.URL, "", body); code != 401 {
+		t.Errorf("no token: %d", code)
+	}
+	if code, _ := doSync(t, ts.URL, "wrong", body); code != 401 {
+		t.Errorf("wrong token: %d", code)
+	}
+}
+
+func TestSyncDisabledWhenNotConfigured(t *testing.T) {
+	ts, _ := newTestServer(t) // no SyncToken / DataDir
+	if code, _ := doSync(t, ts.URL, "anything", nil); code != 503 {
+		t.Fatalf("got %d, want 503", code)
+	}
+}
+
+func TestSyncInstallsAndRefusesBrokenSets(t *testing.T) {
+	ts, _ := newSyncServer(t)
+	c := client()
+
+	// Before the first sync there is nothing to show, and it says so.
+	_, body := get(t, c, ts.URL+"/")
+	if !strings.Contains(body, "No pipeline definitions are installed yet") {
+		t.Fatalf("first-run message missing:\n%s", body)
+	}
+
+	good := syncTgz(t, map[string]string{"basic/pipeline.yml": syncGood})
+	code, out := doSync(t, ts.URL, "s3cret", good)
+	if code != 200 || out["ok"] != true || out["release"] == "" {
+		t.Fatalf("good sync: %d %v", code, out)
+	}
+	if _, body := get(t, c, ts.URL+"/"); !strings.Contains(body, "Basic Synced") {
+		t.Fatalf("new definitions not visible:\n%s", body)
+	}
+
+	// A broken set is refused with the problem named, and the live set stays.
+	bad := syncTgz(t, map[string]string{"basic/pipeline.yml": strings.Replace(syncGood, "next: end", "next: nope", 1)})
+	code, out = doSync(t, ts.URL, "s3cret", bad)
+	if code != 422 || out["ok"] != false {
+		t.Fatalf("broken sync: %d %v", code, out)
+	}
+	if !strings.Contains(fmt.Sprint(out["problems"]), `"nope"`) {
+		t.Fatalf("problems should name the mistake: %v", out["problems"])
+	}
+	if code, body := get(t, c, ts.URL+"/p/basic/"); code != 200 || !strings.Contains(body, "Basic Synced") {
+		t.Fatalf("live definitions changed after a refused sync (%d)", code)
+	}
+
+	// Not an archive at all.
+	if code, _ := doSync(t, ts.URL, "s3cret", []byte("garbage")); code != 400 {
+		t.Errorf("garbage upload: %d", code)
+	}
+}
+
+func TestSyncWarnsAboutItemsInARemovedStage(t *testing.T) {
+	ts, _ := newSyncServer(t)
+	c := client()
+	doSync(t, ts.URL, "s3cret", syncTgz(t, map[string]string{"basic/pipeline.yml": syncGood}))
+	post(t, c, ts.URL+"/p/basic/items", url.Values{"name": {"Bob"}}, nil) // lands in "start"
+
+	renamed := strings.NewReplacer("id: start", "id: begin", "next: end", "next: end").Replace(syncGood)
+	code, out := doSync(t, ts.URL, "s3cret", syncTgz(t, map[string]string{"basic/pipeline.yml": renamed}))
+	if code != 200 {
+		t.Fatalf("sync: %d %v", code, out)
+	}
+	if !strings.Contains(fmt.Sprint(out["warnings"]), `"start"`) {
+		t.Fatalf("expected a warning about the removed stage, got %v", out["warnings"])
 	}
 }
