@@ -1,0 +1,4 @@
+id: typo
+label: Typo
+stages:
+  - {id: a, labell: A, type: do, terminal: true}

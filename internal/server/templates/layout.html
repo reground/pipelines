@@ -1,0 +1,31 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} - Pipelines</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header>
+<nav aria-label="Main">
+<a href="/">Home</a>
+{{range .Nav.Pipelines}}<a href="/p/{{.ID}}/">{{.Label}}</a>{{end}}
+<a href="/contacts">Contacts</a>
+</nav>
+</header>
+<main id="main">
+{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+{{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
+{{if .Problems}}
+<section class="error" role="alert" aria-labelledby="problems">
+<h2 id="problems">A pipeline file has problems</h2>
+<p>Fix the file and reload this page. Where an earlier working version exists it is shown in the meantime; otherwise that pipeline is hidden.</p>
+<ul>{{range .Problems}}<li>{{.}}</li>{{end}}</ul>
+</section>
+{{end}}
+{{template "content" .Data}}
+</main>
+</body>
+</html>{{end}}

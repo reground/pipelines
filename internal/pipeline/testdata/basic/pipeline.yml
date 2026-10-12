@@ -1,0 +1,14 @@
+id: basic
+label: Basic
+fields:
+  - {id: due, label: Due date, type: date}
+  - {id: notes, label: Notes, type: longtext}
+stages:
+  - {id: start, label: Start, type: draft, templates: [hello.md], next: wait_a}
+  - {id: wait_a, label: Waiting, type: wait, next: finish, exits: [no]}
+  - {id: finish, label: Finish, type: do, terminal: true}
+  - {id: no, label: No, type: do, terminal: true}
+views:
+  - {id: open, label: Open, kind: list, where: {active: true}}
+  - {id: by_stage, label: By stage, kind: counts}
+  - {id: entries, label: Entries, kind: events, event: {entered: wait_a}, windows: [7]}

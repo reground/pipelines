@@ -1,0 +1,27 @@
+{{define "content"}}
+<h1>Add to {{.Pipeline.Label}}</h1>
+<form method="post" action="/p/{{.Pipeline.ID}}/items">
+<h2>Who</h2>
+<p class="hint">Pick someone you already have, or enter a new person. A name is enough to start.</p>
+<label for="contact_id">Existing contact</label>
+<select id="contact_id" name="contact_id">
+<option value="">Choose a contact, or enter a new one below</option>
+{{$sel := .Selected}}
+{{range .Contacts}}<option value="{{.ID}}"{{if eq .ID $sel}} selected{{end}}>{{.Name}}{{if .Email}} ({{.Email}}){{end}}</option>{{end}}
+</select>
+<label for="name">New contact: name</label>
+<input id="name" name="name" autocomplete="off">
+<label for="email">New contact: email</label>
+<input id="email" name="email" type="email" autocomplete="off">
+<label for="website">New contact: website</label>
+<input id="website" name="website" type="url" autocomplete="off">
+
+<h2>What you know so far</h2>
+{{range .Pipeline.Fields}}
+<label for="f_{{.ID}}">{{.Label}}</label>
+{{if isLongText .Type}}<textarea id="f_{{.ID}}" name="f_{{.ID}}"></textarea>
+{{else}}<input id="f_{{.ID}}" name="f_{{.ID}}" type="{{inputType .Type}}">{{end}}
+{{end}}
+<p><button type="submit">Add</button></p>
+</form>
+{{end}}

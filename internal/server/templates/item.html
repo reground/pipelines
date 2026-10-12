@@ -1,0 +1,74 @@
+{{define "content"}}
+<h1>{{.Contact.Name}}</h1>
+<p class="hint">{{.Pipeline.Label}}</p>
+
+<dl class="facts">
+<dt>Stage</dt><dd>{{.Stage.Label}}{{if .Retired}} <strong>(no longer in the pipeline)</strong>{{end}}</dd>
+<dt>Waiting on</dt><dd>{{waitingLabel .Waiting}}</dd>
+<dt>In this stage for</dt><dd>{{daysSince .Item.StageEnteredAt}} (since {{niceTime .Item.StageEnteredAt}})</dd>
+{{if .Contact.Email}}<dt>Email</dt><dd><a href="mailto:{{.Contact.Email}}">{{.Contact.Email}}</a></dd>{{end}}
+{{if .Item.ArchivedAt.Valid}}<dt>Status</dt><dd>Archived</dd>{{end}}
+</dl>
+
+{{if .Retired}}
+<p class="warn" role="alert">This stage was removed from the pipeline file. Choose where it should go below.</p>
+{{end}}
+
+<h2>What to do now</h2>
+{{if .Stage.Help}}<p>{{.Stage.Help}}</p>{{end}}
+{{if .Stage.Checklist}}
+<ul>{{range .Stage.Checklist}}<li>{{.}}</li>{{end}}</ul>
+{{end}}
+
+{{range .Drafts}}
+<section aria-labelledby="draft-{{.Name}}">
+<h3 id="draft-{{.Name}}">Draft: {{.Name}}</h3>
+{{if .Missing}}<p class="warn">Still missing: {{range $i, $m := .Missing}}{{if $i}}, {{end}}{{$m}}{{end}}. Add these below and the draft fills itself in.</p>{{end}}
+<pre class="draft">{{.Text}}</pre>
+</section>
+{{end}}
+
+<h2>Move forward</h2>
+<form method="post" action="/p/{{.Pipeline.ID}}/items/{{.Item.ID}}/move">
+{{if .Next}}<button type="submit" name="to" value="{{.Next.ID}}">Done: move to {{.Next.Label}}</button>{{end}}
+{{range .Exits}}<button class="secondary" type="submit" name="to" value="{{.ID}}">Mark as {{.Label}}</button>{{end}}
+<label for="note">Note about this move (optional)</label>
+<input id="note" name="note">
+<label for="to_any">Or move to any stage</label>
+<select id="to_any" name="to_any">
+<option value="">Choose a stage</option>
+{{range .All}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+</select>
+<p><button class="secondary" type="submit">Move to the chosen stage</button></p>
+</form>
+
+<h2>Details</h2>
+<form method="post" action="/p/{{.Pipeline.ID}}/items/{{.Item.ID}}/fields">
+{{$item := .Item}}
+{{range .FieldList}}
+<label for="f_{{.ID}}">{{.Label}}</label>
+{{if isLongText .Type}}<textarea id="f_{{.ID}}" name="f_{{.ID}}">{{field $item .ID}}</textarea>
+{{else}}<input id="f_{{.ID}}" name="f_{{.ID}}" type="{{inputType .Type}}" value="{{field $item .ID}}">{{end}}
+{{end}}
+<p><button type="submit">Save details</button></p>
+</form>
+<p>Contact: <a href="/contacts/{{.Contact.ID}}">edit {{.Contact.Name}}'s details</a></p>
+
+<h2>History</h2>
+<ol>
+{{$p := .Pipeline}}
+{{range .History}}
+<li>{{niceTime .At}}: {{if eq .Kind "created"}}added at {{stageLabel $p .ToStage}}{{else}}moved from {{stageLabel $p .FromStage}} to {{stageLabel $p .ToStage}}{{end}}{{if .Note}}. {{.Note}}{{end}}</li>
+{{end}}
+</ol>
+
+<h2>Remove from lists</h2>
+<form method="post" action="/p/{{.Pipeline.ID}}/items/{{.Item.ID}}/archive">
+{{if .Item.ArchivedAt.Valid}}
+<input type="hidden" name="archive" value="0"><button class="secondary" type="submit">Restore</button>
+{{else}}
+<input type="hidden" name="archive" value="1"><button class="secondary" type="submit">Archive this entry</button>
+<span class="hint">Archiving hides it from lists and counts. Nothing is deleted.</span>
+{{end}}
+</form>
+{{end}}

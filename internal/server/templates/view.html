@@ -1,0 +1,7 @@
+{{define "content"}}
+<h1>{{.Block.Result.View.Label}}</h1>
+{{template "viewblock" .Block}}
+<h2>{{.Title}}</h2>
+{{template "itemstable" .Items}}
+<p><a href="/">Back to home</a></p>
+{{end}}

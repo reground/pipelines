@@ -1,0 +1,11 @@
+{{define "content"}}
+<h1>Something went wrong</h1>
+{{if .}}
+<p>The database cannot be reached right now. Nothing you entered is lost; it is stored in the database, not in this page.</p>
+<p>Try again in a minute. If it keeps happening, the database service needs to be started.</p>
+{{else}}
+<p>That page hit an unexpected problem. The details were written to the server log.</p>
+<p>Going back and trying again usually works. If it keeps happening, tell whoever runs this.</p>
+{{end}}
+<p><a href="/">Back to home</a></p>
+{{end}}

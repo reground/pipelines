@@ -1,0 +1,22 @@
+{{define "content"}}
+<h1>Home</h1>
+{{if not .Pipelines}}
+<p>No pipelines are loaded. Check that the pipelines directory has a folder containing a pipeline.yml.</p>
+{{end}}
+{{range .Pipelines}}
+<section aria-labelledby="p-{{.Pipeline.ID}}">
+<h2 id="p-{{.Pipeline.ID}}">{{.Pipeline.Label}}</h2>
+<p>
+<a href="/p/{{.Pipeline.ID}}/">All entries</a> ·
+<a href="/p/{{.Pipeline.ID}}/new">Add one</a> ·
+<a href="/p/{{.Pipeline.ID}}/definition">How this pipeline works</a>
+</p>
+{{if .Retired}}
+<p class="warn" role="alert">Some items are in a stage that is no longer in the pipeline file:
+{{range $id, $n := .Retired}}{{$id}} ({{$n}}). {{end}}
+Open each one and move it to a current stage.</p>
+{{end}}
+{{range .Views}}{{template "viewblock" .}}{{end}}
+</section>
+{{end}}
+{{end}}

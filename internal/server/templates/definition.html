@@ -1,0 +1,32 @@
+{{define "content"}}
+<h1>{{.Label}}: how this pipeline works</h1>
+{{if .Help}}<p>{{.Help}}</p>{{end}}
+<p class="hint">This page describes the pipeline file. To change the process, edit
+<code>{{.ID}}/pipeline.yml</code> in the pipelines repo and push; the checker explains anything that needs fixing.</p>
+
+<h2>Stages, in order</h2>
+<ol>
+{{$p := .}}
+{{range .Stages}}
+<li>
+<strong>{{.Label}}</strong>
+({{.Type}}{{if .Terminal}}, finished{{else if eq .WaitingOn "them"}}, waiting on them{{else if eq .WaitingOn ""}}, waiting on nobody{{end}})
+{{if .Help}}<br>{{.Help}}{{end}}
+{{if .Next}}<br>Next step: {{stageLabel $p .Next}}{{end}}
+{{if .Exits}}<br>Can also go to: {{range $i, $e := .Exits}}{{if $i}}, {{end}}{{stageLabel $p $e}}{{end}}{{end}}
+{{if .Checklist}}<br>Checklist: {{range $i, $c := .Checklist}}{{if $i}}; {{end}}{{$c}}{{end}}{{end}}
+{{if .Templates}}<br>Drafts shown: {{range $i, $c := .Templates}}{{if $i}}, {{end}}{{$c}}{{end}}{{end}}
+</li>
+{{end}}
+</ol>
+
+<h2>Fields on each entry</h2>
+<ul>
+{{range .Fields}}<li>{{.Label}} ({{.Type}})</li>{{end}}
+</ul>
+
+<h2>Questions on the home page</h2>
+<ul>
+{{range .Views}}<li><a href="/p/{{$p.ID}}/views/{{.ID}}">{{.Label}}</a> ({{.Kind}})</li>{{end}}
+</ul>
+{{end}}

@@ -1,0 +1,18 @@
+{{define "content"}}
+<h1>{{.Pipeline.Label}}</h1>
+<p><a href="/p/{{.Pipeline.ID}}/new">Add one</a> · <a href="/p/{{.Pipeline.ID}}/definition">How this pipeline works</a> ·
+<a href="/export/{{.Pipeline.ID}}/items.csv">Download as CSV</a></p>
+<form method="get" action="/p/{{.Pipeline.ID}}/" aria-label="Filter the list">
+<label for="q">Search by name or email</label>
+<input id="q" name="q" type="search" value="{{.Query}}">
+<label for="show">Show</label>
+<select id="show" name="show">
+{{$scope := .Scope}}
+{{range .Scopes}}<option value="{{.Value}}"{{if eq .Value $scope}} selected{{end}}>{{.Label}}</option>{{end}}
+</select>
+<input type="hidden" name="sort" value="{{.Sort}}">
+{{if .Desc}}<input type="hidden" name="dir" value="desc">{{end}}
+<p><button type="submit">Apply</button></p>
+</form>
+{{template "itemstable" .}}
+{{end}}

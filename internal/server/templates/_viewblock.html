@@ -1,0 +1,11 @@
+{{define "viewblock"}}
+<section{{if not .Compact}} aria-labelledby="v-{{.Result.View.ID}}"{{end}}>
+{{if not .Compact}}<h3 id="v-{{.Result.View.ID}}"><a href="/p/{{.Pipeline.ID}}/views/{{.Result.View.ID}}">{{.Result.View.Label}}</a></h3>{{end}}
+{{if .Result.Note}}<p class="hint">{{.Result.Note}}</p>{{end}}
+<ul>
+{{range .Result.Sections}}
+<li><a href="/p/{{$.Pipeline.ID}}/views/{{$.Result.View.ID}}?part={{.Part}}" aria-label="{{if eq $.Result.View.Kind "list"}}{{.Label}}{{else}}{{.Label}}: {{.Count}}{{end}} - {{$.Result.View.Label}}">{{if eq $.Result.View.Kind "list"}}{{.Label}}{{else}}{{.Label}}: {{.Count}}{{end}}</a>{{if .Note}} <span class="hint">{{.Note}}</span>{{end}}</li>
+{{end}}
+</ul>
+</section>
+{{end}}

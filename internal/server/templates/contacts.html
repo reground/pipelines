@@ -1,0 +1,18 @@
+{{define "content"}}
+<h1>Contacts</h1>
+<p><a href="/contacts/new">Add a contact</a> · <a href="/export/contacts.csv">Download as CSV</a></p>
+<form method="get" action="/contacts" aria-label="Search contacts">
+<label for="q">Search by name or email</label>
+<input id="q" name="q" type="search" value="{{.Query}}">
+<p><button type="submit">Search</button></p>
+</form>
+{{if not .Contacts}}<p>No contacts yet.</p>{{else}}
+<table>
+<caption>{{len .Contacts}} {{if eq (len .Contacts) 1}}contact{{else}}contacts{{end}}</caption>
+<thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Website</th></tr></thead>
+<tbody>
+{{range .Contacts}}<tr><th scope="row"><a href="/contacts/{{.ID}}">{{.Name}}</a></th><td>{{.Email}}</td><td>{{.Website}}</td></tr>{{end}}
+</tbody>
+</table>
+{{end}}
+{{end}}
