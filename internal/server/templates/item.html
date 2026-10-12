@@ -1,6 +1,5 @@
 {{define "content"}}
-<h1>{{.Contact.Name}}</h1>
-<p class="hint">{{.Pipeline.Label}}</p>
+<h1>{{.Pipeline.Label}}: {{.Contact.Name}}</h1>
 
 <dl class="facts">
 <dt>Stage</dt><dd>{{.Stage.Label}}{{if .Retired}} <strong>(no longer in the pipeline)</strong>{{end}}</dd>

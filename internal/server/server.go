@@ -145,8 +145,13 @@ type nav struct {
 	Pipelines []*pipeline.Pipeline
 }
 
+// crumb is one step of the breadcrumb trail. The last one has no Path:
+// it is the page you are on.
+type crumb struct{ Label, Path string }
+
 type pageData struct {
 	Title    string
+	Crumbs   []crumb
 	Nav      nav
 	Notice   string
 	Error    string
@@ -205,10 +210,11 @@ func (s *Server) loadPipelines() (ok []*pipeline.Pipeline, problems []string) {
 	return ok, problems
 }
 
-func (s *Server) render(w http.ResponseWriter, r *http.Request, page, title string, data any) {
+func (s *Server) render(w http.ResponseWriter, r *http.Request, page, title string, data any, crumbs ...crumb) {
 	pls, problems := s.loadPipelines()
 	pd := pageData{
 		Title:    title,
+		Crumbs:   crumbs,
 		Nav:      nav{Pipelines: pls},
 		Notice:   r.URL.Query().Get("notice"),
 		Error:    r.URL.Query().Get("error"),
@@ -245,7 +251,7 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) 
 	log.Printf("error: %s %s: %v", r.Method, r.URL.Path, err)
 	dbDown := s.DB.Ping() != nil
 	w.WriteHeader(http.StatusInternalServerError)
-	s.render(w, r, "error", "Something went wrong", dbDown)
+	s.render(w, r, "error", "Something went wrong", dbDown, crumb{"Home", "/"}, crumb{"Something went wrong", ""})
 }
 
 func idParam(r *http.Request, name string) (int64, bool) {
@@ -474,13 +480,13 @@ func (s *Server) handleView(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.render(w, r, "view", v.Label, viewData{
+	s.render(w, r, "view", p.Label+": "+v.Label, viewData{
 		Pipeline: p,
 		Block:    viewBlock{Pipeline: p, Result: res, Compact: true},
 		Part:     part,
 		Title:    title,
 		Items:    s.tableFor(p, items, "", false, "", nil),
-	})
+	}, crumb{"Home", "/"}, crumb{p.Label, "/p/" + p.ID + "/"}, crumb{v.Label, ""})
 }
 
 // ---- items list
@@ -525,6 +531,16 @@ func (t *itemsTable) SortURL(key string) string {
 		q.Set("dir", "desc")
 	}
 	return t.SortBase + "?" + q.Encode()
+}
+
+// ScopeLabel is the human name of what the list is currently showing.
+func (t *itemsTable) ScopeLabel() string {
+	for _, s := range t.Scopes {
+		if s.Value == t.Scope {
+			return s.Label
+		}
+	}
+	return t.Scope
 }
 
 func (t *itemsTable) AriaSort(key string) string {
@@ -583,7 +599,7 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 	for _, st := range p.Stages {
 		t.Scopes = append(t.Scopes, scopeOption{st.ID, "Only: " + st.Label})
 	}
-	s.render(w, r, "items", p.Label, t)
+	s.render(w, r, "items", p.Label, t, crumb{"Home", "/"}, crumb{p.Label, ""})
 }
 
 func (s *Server) handleDefinition(w http.ResponseWriter, r *http.Request) {
@@ -591,7 +607,8 @@ func (s *Server) handleDefinition(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.render(w, r, "definition", p.Label+": definition", p)
+	s.render(w, r, "definition", p.Label+": how this pipeline works", p,
+		crumb{"Home", "/"}, crumb{p.Label, "/p/" + p.ID + "/"}, crumb{"How this pipeline works", ""})
 }
 
 // ---- new item
@@ -613,7 +630,8 @@ func (s *Server) handleNewItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sel, _ := strconv.ParseInt(r.URL.Query().Get("contact"), 10, 64)
-	s.render(w, r, "newitem", "Add to "+p.Label, newItemData{Pipeline: p, Contacts: cs, Selected: sel})
+	s.render(w, r, "newitem", "Add to "+p.Label, newItemData{Pipeline: p, Contacts: cs, Selected: sel},
+		crumb{"Home", "/"}, crumb{p.Label, "/p/" + p.ID + "/"}, crumb{"Add one", ""})
 }
 
 func fieldsFromForm(p *pipeline.Pipeline, r *http.Request) (map[string]string, error) {
@@ -753,7 +771,8 @@ func (s *Server) handleItem(w http.ResponseWriter, r *http.Request) {
 		}
 		d.Drafts = append(d.Drafts, renderedTemplate{Name: name, Text: text, Missing: missing})
 	}
-	s.render(w, r, "item", c.Name+": "+p.Label, d)
+	s.render(w, r, "item", p.Label+": "+c.Name, d,
+		crumb{"Home", "/"}, crumb{p.Label, "/p/" + p.ID + "/"}, crumb{c.Name, ""})
 }
 
 func (s *Server) itemFor(w http.ResponseWriter, r *http.Request) (*pipeline.Pipeline, dbstore.Item, bool) {
@@ -849,11 +868,13 @@ func (s *Server) handleContacts(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	s.render(w, r, "contacts", "Contacts", contactsData{Contacts: cs, Query: q})
+	s.render(w, r, "contacts", "Contacts", contactsData{Contacts: cs, Query: q},
+		crumb{"Home", "/"}, crumb{"Contacts", ""})
 }
 
 func (s *Server) handleNewContact(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "newcontact", "New contact", nil)
+	s.render(w, r, "newcontact", "New contact", nil,
+		crumb{"Home", "/"}, crumb{"Contacts", "/contacts"}, crumb{"New contact", ""})
 }
 
 func (s *Server) handleCreateContact(w http.ResponseWriter, r *http.Request) {
@@ -901,7 +922,8 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		sort.SliceStable(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
 		d.Pipelines = append(d.Pipelines, contactItems{Pipeline: p, Items: items})
 	}
-	s.render(w, r, "contact", c.Name, d)
+	s.render(w, r, "contact", "Contact: "+c.Name, d,
+		crumb{"Home", "/"}, crumb{"Contacts", "/contacts"}, crumb{c.Name, ""})
 }
 
 func (s *Server) handleUpdateContact(w http.ResponseWriter, r *http.Request) {

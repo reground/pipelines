@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1>{{.Block.Result.View.Label}}</h1>
+<h1>{{.Pipeline.Label}}: {{.Block.Result.View.Label}}</h1>
 {{template "viewblock" .Block}}
 <h2>{{.Title}}</h2>
 {{template "itemstable" .Items}}

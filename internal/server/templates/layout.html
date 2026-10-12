@@ -16,6 +16,14 @@
 </nav>
 </header>
 <main id="main">
+{{if .Crumbs}}
+<nav aria-label="Breadcrumb" class="crumbs">
+<ol>
+{{range $i, $c := .Crumbs}}<li>{{if $i}}<span aria-hidden="true">&rsaquo;</span> {{end}}{{if $c.Path}}<a href="{{$c.Path}}">{{$c.Label}}</a>{{else}}<span aria-current="page">{{$c.Label}}</span>{{end}}</li>
+{{end}}
+</ol>
+</nav>
+{{end}}
 {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 {{if .Problems}}

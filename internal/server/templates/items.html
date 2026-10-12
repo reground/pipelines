@@ -1,5 +1,6 @@
 {{define "content"}}
 <h1>{{.Pipeline.Label}}</h1>
+<p>Showing: {{.ScopeLabel}}{{if .Query}}, matching &ldquo;{{.Query}}&rdquo;{{end}}.</p>
 <p><a href="/p/{{.Pipeline.ID}}/new">Add one</a> · <a href="/p/{{.Pipeline.ID}}/definition">How this pipeline works</a> ·
 <a href="/export/{{.Pipeline.ID}}/items.csv">Download as CSV</a></p>
 <form method="get" action="/p/{{.Pipeline.ID}}/" aria-label="Filter the list">

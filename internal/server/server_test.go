@@ -328,3 +328,113 @@ func TestSyncWarnsAboutItemsInARemovedStage(t *testing.T) {
 		t.Fatalf("expected a warning about the removed stage, got %v", out["warnings"])
 	}
 }
+
+// ---- where am I, and contacts across pipelines
+
+func h1(body string) string {
+	i := strings.Index(body, "<h1>")
+	j := strings.Index(body, "</h1>")
+	if i < 0 || j < i {
+		return ""
+	}
+	return body[i+4 : j]
+}
+
+func TestPagesSayWhereYouAre(t *testing.T) {
+	ts, _ := newTestServer(t)
+	c := client()
+	post(t, c, ts.URL+"/p/basic/items", url.Values{"name": {"Bob Example"}}, nil)
+
+	cases := []struct {
+		path, h1, crumb string
+	}{
+		{"/p/basic/views/open", "Basic: Open", `<span aria-current="page">Open</span>`},
+		{"/p/basic/items/1", "Basic: Bob Example", `<span aria-current="page">Bob Example</span>`},
+		{"/p/basic/", "Basic", `<span aria-current="page">Basic</span>`},
+		{"/p/basic/definition", "Basic: how this pipeline works", `<span aria-current="page">How this pipeline works</span>`},
+		{"/contacts", "Contacts", `<span aria-current="page">Contacts</span>`},
+	}
+	for _, tc := range cases {
+		code, body := get(t, c, ts.URL+tc.path)
+		if code != 200 {
+			t.Errorf("%s: %d", tc.path, code)
+			continue
+		}
+		if got := h1(body); got != tc.h1 {
+			t.Errorf("%s: h1 = %q, want %q", tc.path, got, tc.h1)
+		}
+		if !strings.Contains(body, `aria-label="Breadcrumb"`) || !strings.Contains(body, tc.crumb) {
+			t.Errorf("%s: breadcrumb missing %q", tc.path, tc.crumb)
+		}
+		if strings.Count(body, "<h1>") != 1 {
+			t.Errorf("%s: want exactly one h1", tc.path)
+		}
+	}
+
+	// A drill-down page names the pipeline in its document title too.
+	_, body := get(t, c, ts.URL+"/p/basic/views/open")
+	if !strings.Contains(body, "<title>Basic: Open - Pipelines</title>") {
+		t.Errorf("document title does not carry the pipeline name")
+	}
+	// The list says what it is showing.
+	_, body = get(t, c, ts.URL+"/p/basic/?show=all")
+	if !strings.Contains(body, "Showing: Everything") {
+		t.Errorf("list does not say what it is showing")
+	}
+}
+
+const secondPipeline = `id: other
+label: Other Process
+stages:
+  - {id: first, label: First, type: do, next: last}
+  - {id: last, label: Last, type: do, terminal: true}
+`
+
+func TestOneContactCanBeInSeveralPipelinesAndTwiceInOne(t *testing.T) {
+	ts, s := newTestServer(t)
+	c := client()
+	if err := os.MkdirAll(s.Dir+"/other", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.Dir+"/other/pipeline.yml", []byte(secondPipeline), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bob starts in one pipeline...
+	post(t, c, ts.URL+"/p/basic/items", url.Values{"name": {"Bob Example"}, "email": {"bob@example.com"}}, nil)
+	// ...and the same Bob is chosen, not re-entered, for another.
+	_, form := get(t, c, ts.URL+"/p/other/new")
+	if !strings.Contains(form, "Bob Example (bob@example.com)") {
+		t.Fatalf("the new-entry form does not offer the existing contact:\n%s", form)
+	}
+	res := post(t, c, ts.URL+"/p/other/items", url.Values{"contact_id": {"1"}}, nil)
+	if !strings.HasPrefix(res.Header.Get("Location"), "/p/other/items/") {
+		t.Fatalf("second pipeline entry not created: %q", res.Header.Get("Location"))
+	}
+	// And a second entry in the first pipeline: a repeat swap with the same person.
+	post(t, c, ts.URL+"/p/basic/items", url.Values{"contact_id": {"1"}}, nil)
+
+	// Still one contact.
+	_, list := get(t, c, ts.URL+"/contacts")
+	if strings.Count(list, "Bob Example") != 1 {
+		t.Fatalf("expected a single Bob in the contacts list:\n%s", list)
+	}
+	// His page shows every pipeline he is in, and both entries in the first.
+	_, page := get(t, c, ts.URL+"/contacts/1")
+	for _, want := range []string{"Basic", "Other Process"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("contact page does not mention %q", want)
+		}
+	}
+	if n := strings.Count(page, "/p/basic/items/"); n != 2 {
+		t.Errorf("want 2 entries linked in Basic, got %d", n)
+	}
+	if n := strings.Count(page, "/p/other/items/"); n != 1 {
+		t.Errorf("want 1 entry linked in Other Process, got %d", n)
+	}
+	// The pipelines' lists are independent.
+	_, other := get(t, c, ts.URL+"/p/other/")
+	if strings.Count(other, "Bob Example") != 1 {
+		t.Errorf("Other Process list should show Bob once")
+	}
+}

@@ -38,4 +38,7 @@ pre.draft { white-space: pre-wrap; border: 1px solid var(--line); padding: .75re
 dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
 dl.facts dt { font-weight: 600; } dl.facts dd { margin: 0; }
 ul.plain { list-style: none; padding-left: 0; }
+.crumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: .25rem .5rem; padding: 0; margin: 0 0 .5rem; }
+.crumbs li { display: inline; }
+.crumbs [aria-current] { font-weight: 600; }
 @media print { header, .skip { display: none; } }
