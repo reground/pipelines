@@ -71,7 +71,7 @@ Build from source:
 ```sh
 git clone https://gitea.reground.org/will/pipelines.git
 cd pipelines
-git checkout v0.3.1        # use the newest tag, not an untagged commit
+git checkout v0.3.2        # use the newest tag, not an untagged commit
 go build -o pipelines .
 sudo install -m 0755 pipelines /usr/local/bin/pipelines
 ```
@@ -517,3 +517,15 @@ internal/metrics/             evaluating views and the entries behind them
 internal/server/              pages, templates, static CSS
 internal/testdb/              throwaway schema per test
 ```
+
+## Licence
+
+pipelines is free software under the GNU Affero General Public License,
+version 3 or (at your option) any later version. The full text is in
+[`LICENSE`](LICENSE).
+
+In practice: you can run it for yourself or your team, and change it, with
+no obligation beyond keeping the licence notices. If you offer a modified
+version to other people as a service over a network, you must make your
+modified source available to those people. The pipeline files you write
+for it are your own data and are not covered.
