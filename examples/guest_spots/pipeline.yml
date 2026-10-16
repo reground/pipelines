@@ -1,0 +1,108 @@
+# Example pipeline: getting booked as a guest on other people's podcasts
+# and newsletters. Copy this folder, rename it, and change it to fit your
+# own process. The folder name should match `id`.
+#
+# An item is one booking attempt with one contact. Stages run in the order
+# written here. "next" is the default step forward; "exits" are the other
+# places an item can go. To change the process, edit this file and run
+# `pipelines check .` from the folder that holds it.
+id: guest_spots
+label: Guest spots
+help: Pitching myself as a guest and following it through to publication.
+
+fields:
+  - {id: show_url,      label: Their show or site,  type: url}
+  - {id: audience_size, label: Audience size,       type: number}
+  - {id: record_date,   label: Recording date,      type: date}
+  - {id: notes,         label: Notes,               type: longtext}
+
+stages:
+  - id: prospect
+    label: Prospect
+    type: draft
+    help: Someone whose audience fits. Send the pitch, then move to Pitched.
+    templates: [pitch.md]
+    next: pitched
+
+  - id: pitched
+    label: Pitched
+    type: wait
+    help: Pitch sent. If you have heard nothing after a week or so, send a follow-up and record it here; it restarts the clock without leaving this stage.
+    repeat: {id: follow_up, label: Sent a follow-up, templates: [follow-up.md]}
+    next: booked
+    exits: [declined, no_response]
+
+  - id: booked
+    label: Booked
+    type: do
+    help: They said yes. Agree on a date and record it.
+    checklist:
+      - Confirm the recording date
+      - Send a short bio and headshot
+    next: recorded
+
+  - id: recorded
+    label: Recorded
+    type: wait
+    help: It is recorded. Waiting for it to go live.
+    next: published
+
+  - id: published
+    label: Published
+    type: do
+    help: It is live. Send thanks and note what it brought in.
+    templates: [thank-you.md]
+    next: done
+
+  - id: done
+    label: Done
+    type: do
+    terminal: true
+    help: Finished. They have been thanked.
+
+  - id: declined
+    label: Declined
+    type: do
+    terminal: true
+    help: They replied and said no.
+
+  - id: no_response
+    label: No response
+    type: do
+    terminal: true
+    help: Gave up waiting for a reply.
+
+views:
+  - id: needs_me
+    label: Needs me now
+    kind: list
+    where: {waiting_on: me, active: true}
+    sort: record_date
+
+  - id: waiting_on_them
+    label: Waiting on them
+    kind: list
+    where: {waiting_on: them}
+    sort: entered
+
+  - id: stale
+    label: Pitched more than 10 days ago with no answer
+    kind: list
+    where: {stage: [pitched], days_in_stage_over: 10}
+    sort: entered
+
+  - {id: by_stage, label: Bookings by stage, kind: counts}
+
+  - id: pitches
+    label: Pitches sent
+    kind: events
+    event: {entered: pitched}
+    windows: [7, 30, 90]
+
+  - id: reply_rate
+    label: Reply rate
+    kind: cohort
+    event: {entered: pitched}
+    outcome: {entered: [booked, declined]}
+    window_days: 30
+    ending_days_ago: 14

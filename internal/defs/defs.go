@@ -105,7 +105,16 @@ func Install(dataDir string, archive io.Reader) (*Result, error) {
 	if err := os.Symlink(filepath.Join("releases", filepath.Base(dest)), tmpLink); err != nil {
 		return nil, err
 	}
-	if err := os.Rename(tmpLink, filepath.Join(dataDir, "current")); err != nil {
+	curPath := filepath.Join(dataDir, "current")
+	aside, err := moveAsideIfNotALink(dataDir, curPath, name)
+	if err != nil {
+		os.Remove(tmpLink)
+		return nil, err
+	}
+	if err := os.Rename(tmpLink, curPath); err != nil {
+		if aside != "" {
+			_ = os.Rename(aside, curPath) // put back what was there
+		}
 		return nil, err
 	}
 	prune(dataDir)
@@ -113,6 +122,39 @@ func Install(dataDir string, archive io.Reader) (*Result, error) {
 }
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
+
+// moveAsideIfNotALink makes room for the "current" link. If something that
+// is not a link is sitting at that path (typically an empty directory
+// someone created while setting up, or a hand-placed set of pipelines), a
+// rename of the link over it would fail. An empty directory is removed; any
+// other file or directory is moved to current.before-sync-<release> beside
+// it, not into releases/, so it is neither lost nor pruned. It returns the
+// new path of anything moved aside, or "".
+func moveAsideIfNotALink(dataDir, cur, release string) (string, error) {
+	fi, err := os.Lstat(cur)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return "", nil
+	}
+	if fi.IsDir() {
+		if err := os.Remove(cur); err == nil { // succeeds only if empty
+			return "", nil
+		}
+	}
+	aside := filepath.Join(dataDir, "current.before-sync-"+release)
+	for i := 2; exists(aside); i++ {
+		aside = filepath.Join(dataDir, fmt.Sprintf("current.before-sync-%s-%d", release, i))
+	}
+	if err := os.Rename(cur, aside); err != nil {
+		return "", err
+	}
+	return aside, nil
+}
 
 // validate loads and checks every pipeline directory under root.
 func validate(root string) ([]*pipeline.Pipeline, []string) {

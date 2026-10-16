@@ -191,3 +191,38 @@ func TestPruneKeepsNewestAndCurrent(t *testing.T) {
 		t.Fatal("current was pruned")
 	}
 }
+
+func TestEmptyCurrentDirectoryIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(dir, tgz(t, good())); err != nil {
+		t.Fatal(err)
+	}
+	if current(t, dir) != goodYAML {
+		t.Fatal("current does not hold the new definitions")
+	}
+}
+
+func TestNonEmptyCurrentDirectoryIsKeptBesideNotLost(t *testing.T) {
+	dir := t.TempDir()
+	cur := filepath.Join(dir, "current", "basic")
+	if err := os.MkdirAll(cur, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cur, "pipeline.yml"), []byte("hand placed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Install(dir, tgz(t, good()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current(t, dir) != goodYAML {
+		t.Fatal("current does not hold the new definitions")
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "current.before-sync-"+res.Release, "basic", "pipeline.yml"))
+	if err != nil || string(kept) != "hand placed" {
+		t.Fatalf("what was there was not kept: %q, %v", kept, err)
+	}
+}
